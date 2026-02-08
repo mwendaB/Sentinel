@@ -1,5 +1,6 @@
 using Sentinel.Web.Components;
 using Sentinel.Web.Hubs;
+using Sentinel.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,6 +8,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<LogStreamState>();
+builder.Services.AddSingleton<RuleStore>();
+builder.Services.AddHostedService<LogStreamSimulator>();
 
 var app = builder.Build();
 

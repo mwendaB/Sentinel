@@ -1,0 +1,59 @@
+@page "/logs"
+
+<PageTitle>Live Logs</PageTitle>
+
+<div class="space-y-6">
+    <header class="flex flex-col gap-2">
+        <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">Live Logs</h1>
+        <p class="text-sm text-slate-500">Streamed from active sources with filters and regex search.</p>
+    </header>
+
+    <div class="grid gap-4 md:grid-cols-3">
+        <div class="sentinel-panel rounded-2xl p-4">
+            <label class="text-xs uppercase tracking-[0.2em] text-slate-400">Level</label>
+            <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm">
+                <option>All</option>
+                <option>Error</option>
+                <option>Warning</option>
+                <option>Info</option>
+            </select>
+        </div>
+        <div class="sentinel-panel rounded-2xl p-4">
+            <label class="text-xs uppercase tracking-[0.2em] text-slate-400">Source</label>
+            <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm">
+                <option>All</option>
+                <option>nginx</option>
+                <option>postgres</option>
+                <option>redis</option>
+            </select>
+        </div>
+        <div class="sentinel-panel rounded-2xl p-4">
+            <label class="text-xs uppercase tracking-[0.2em] text-slate-400">Search</label>
+            <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm" placeholder="Regex or keyword" />
+        </div>
+    </div>
+
+    <div class="sentinel-panel rounded-3xl p-6">
+        <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Stream</h2>
+            <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white">Pause</button>
+        </div>
+        <div class="mt-4 space-y-3 text-sm">
+            <div class="flex items-center justify-between rounded-2xl border border-slate-100/60 bg-white/70 p-4">
+                <span class="text-rose-600">ERROR</span>
+                <span class="flex-1 px-4">nginx connection timeout (x3)</span>
+                <span class="text-xs text-slate-500">10:42:31</span>
+            </div>
+            <div class="flex items-center justify-between rounded-2xl border border-slate-100/60 bg-white/70 p-4">
+                <span class="text-amber-600">WARN</span>
+                <span class="flex-1 px-4">postgres slow query detected</span>
+                <span class="text-xs text-slate-500">10:42:18</span>
+            </div>
+            <div class="flex items-center justify-between rounded-2xl border border-slate-100/60 bg-white/70 p-4">
+                <span class="text-emerald-600">INFO</span>
+                <span class="flex-1 px-4">redis cache hit rate: 94%</span>
+                <span class="text-xs text-slate-500">10:41:59</span>
+            </div>
+        </div>
+    </div>
+</div>

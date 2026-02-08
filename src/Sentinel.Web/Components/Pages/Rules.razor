@@ -1,4 +1,6 @@
 @page "/rules"
+@using Sentinel.Core.Models
+@using Sentinel.Web.Services
 
 <PageTitle>Rules</PageTitle>
 
@@ -8,30 +10,139 @@
         <p class="text-sm text-slate-500">Visualize, test, and toggle automated rules.</p>
     </header>
 
-    <div class="sentinel-panel rounded-3xl p-6">
-        <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Active Rules</h2>
-            <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white">Create Rule</button>
-        </div>
-        <div class="mt-4 space-y-3">
-            <div class="rounded-2xl border border-slate-100/60 bg-white/70 p-4">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-sm font-semibold">High latency on postgres</p>
-                        <p class="text-xs text-slate-500">Regex: slow query detected</p>
+    <div class="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <div class="sentinel-panel rounded-3xl p-6">
+            <div class="flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Active Rules</h2>
+                <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white" @onclick="AddRule">Create Rule</button>
+            </div>
+            <div class="mt-4 space-y-3">
+                @foreach (var rule in RuleStore.Rules)
+                {
+                    <div class="rounded-2xl border border-slate-100/60 bg-white/70 p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-semibold">@rule.Name</p>
+                                <p class="text-xs text-slate-500">Regex: @rule.Pattern</p>
+                            </div>
+                            <button class="rounded-full px-3 py-1 text-xs @(rule.Enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700")" @onclick="() => ToggleRule(rule.Id)">
+                                @(rule.Enabled ? "Enabled" : "Disabled")
+                            </button>
+                        </div>
                     </div>
-                    <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs text-emerald-700">Enabled</span>
+                }
+            </div>
+        </div>
+
+        <div class="space-y-6">
+            <div class="sentinel-panel rounded-3xl p-6">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Create Rule</h2>
+                <div class="mt-4 space-y-3 text-sm">
+                    <label class="block text-xs uppercase tracking-[0.2em] text-slate-400">Name</label>
+                    <input class="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2" @bind="newRuleName" />
+
+                    <label class="block text-xs uppercase tracking-[0.2em] text-slate-400">Regex Pattern</label>
+                    <input class="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2" @bind="newRulePattern" />
+
+                    <label class="block text-xs uppercase tracking-[0.2em] text-slate-400">Minimum Level</label>
+                    <select class="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2" @bind="newRuleLevel">
+                        @foreach (var level in Enum.GetValues<LogLevel>())
+                        {
+                            <option value="@level">@level</option>
+                        }
+                    </select>
+
+                    <label class="flex items-center gap-2 text-xs text-slate-500">
+                        <input type="checkbox" class="h-4 w-4 rounded border-slate-300" @bind="newRuleEnabled" />
+                        Enabled
+                    </label>
                 </div>
             </div>
-            <div class="rounded-2xl border border-slate-100/60 bg-white/70 p-4">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-sm font-semibold">Nginx timeouts</p>
-                        <p class="text-xs text-slate-500">Regex: connection timeout</p>
+
+            <div class="sentinel-panel rounded-3xl p-6">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Test Rule</h2>
+                <div class="mt-4 space-y-3 text-sm">
+                    <label class="block text-xs uppercase tracking-[0.2em] text-slate-400">Rule</label>
+                    <select class="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2" @bind="selectedRuleId">
+                        @foreach (var rule in RuleStore.Rules)
+                        {
+                            <option value="@rule.Id">@rule.Name</option>
+                        }
+                    </select>
+                    <label class="flex items-center gap-2 text-xs text-slate-500">
+                        <input type="checkbox" class="h-4 w-4 rounded border-slate-300" @bind="dryRun" />
+                        Dry-run mode
+                    </label>
+                    <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white" @onclick="RunTest">Test Rule</button>
+                    <div class="text-xs text-slate-500">
+                        Matches: @testMatches.Count
                     </div>
-                    <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs text-emerald-700">Enabled</span>
+                    <div class="space-y-2">
+                        @foreach (var match in testMatches.Take(5))
+                        {
+                            <div class="rounded-xl border border-slate-100/60 bg-white/70 p-3">
+                                <p class="text-sm font-medium">@match.Message</p>
+                                <p class="text-xs text-slate-500">@match.Source.Name · @match.Timestamp:HH:mm:ss</p>
+                            </div>
+                        }
+                    </div>
+                    @if (dryRun)
+                    {
+                        <div class="rounded-xl bg-amber-100 px-3 py-2 text-xs text-amber-700">
+                            Dry-run enabled. No actions will be executed.
+                        </div>
+                    }
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+@code {
+    [Inject] private RuleStore RuleStore { get; set; } = null!;
+
+    private string newRuleName = "New Rule";
+    private string newRulePattern = "error";
+    private LogLevel newRuleLevel = LogLevel.Warning;
+    private bool newRuleEnabled = true;
+
+    private Guid selectedRuleId;
+    private bool dryRun = true;
+    private List<LogEvent> testMatches = new();
+
+    protected override void OnInitialized()
+    {
+        if (RuleStore.Rules.Count > 0)
+        {
+            selectedRuleId = RuleStore.Rules[0].Id;
+        }
+    }
+
+    private void AddRule()
+    {
+        if (string.IsNullOrWhiteSpace(newRuleName) || string.IsNullOrWhiteSpace(newRulePattern))
+        {
+            return;
+        }
+
+        var rule = RuleStore.AddRule(newRuleName, newRulePattern, newRuleLevel, newRuleEnabled);
+        selectedRuleId = rule.Id;
+    }
+
+    private void ToggleRule(Guid id)
+    {
+        RuleStore.ToggleRule(id);
+    }
+
+    private void RunTest()
+    {
+        var rule = RuleStore.Rules.FirstOrDefault(r => r.Id == selectedRuleId);
+        if (rule is null)
+        {
+            testMatches = new List<LogEvent>();
+            return;
+        }
+
+        testMatches = RuleStore.TestRule(rule).ToList();
+    }
+}

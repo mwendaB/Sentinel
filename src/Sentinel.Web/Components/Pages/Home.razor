@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.SignalR.Client
 @using Sentinel.Core.Models
 @using Sentinel.Web.Hubs
+@using Sentinel.Web.Services
 @implements IAsyncDisposable
 
 <PageTitle>Dashboard</PageTitle>
@@ -105,51 +106,24 @@
 @code {
     private HubConnection? _hubConnection;
 
-    private int eventsPerSecond = 1247;
-    private int activeRules = 42;
-    private int actionsToday = 156;
-    private int activeSources = 9;
-    private int rulesEvaluated = 1480;
-    private int actionSuccessRate = 96;
+    [Inject] private LogStreamState LogStreamState { get; set; } = null!;
+
+    private int eventsPerSecond;
+    private int activeRules;
+    private int actionsToday;
+    private int activeSources;
+    private int rulesEvaluated;
+    private int actionSuccessRate;
     private string trendIndicator = "+5.2%";
 
-    private readonly List<LogEvent> recentEvents =
-    [
-        new()
-        {
-            Id = Guid.NewGuid(),
-            Timestamp = DateTimeOffset.UtcNow.AddSeconds(-12),
-            Level = LogLevel.Error,
-            Message = "nginx connection timeout (x3)",
-            Source = new LogSource { Name = "nginx", Platform = Platform.Linux, Type = SourceType.Syslog }
-        },
-        new()
-        {
-            Id = Guid.NewGuid(),
-            Timestamp = DateTimeOffset.UtcNow.AddSeconds(-28),
-            Level = LogLevel.Warning,
-            Message = "postgres slow query detected",
-            Source = new LogSource { Name = "postgres", Platform = Platform.Linux, Type = SourceType.Journald }
-        },
-        new()
-        {
-            Id = Guid.NewGuid(),
-            Timestamp = DateTimeOffset.UtcNow.AddSeconds(-44),
-            Level = LogLevel.Information,
-            Message = "redis cache hit rate: 94%",
-            Source = new LogSource { Name = "redis", Platform = Platform.Linux, Type = SourceType.DockerContainer }
-        }
-    ];
-
-    private readonly List<ActionRecord> recentActions =
-    [
-        new("Restarted nginx", 95, DateTimeOffset.UtcNow.AddMinutes(-3), ActionStatus.Success),
-        new("Scaling database", 89, DateTimeOffset.UtcNow.AddMinutes(-7), ActionStatus.InProgress),
-        new("Notified on-call via Slack", 92, DateTimeOffset.UtcNow.AddMinutes(-12), ActionStatus.Success)
-    ];
+    private List<LogEvent> recentEvents = new();
+    private List<ActionRecord> recentActions = new();
 
     protected override async Task OnInitializedAsync()
     {
+        SyncFromState();
+        LogStreamState.Updated += OnStateUpdated;
+
         _hubConnection = new HubConnectionBuilder()
             .WithUrl("/hubs/events")
             .WithAutomaticReconnect()
@@ -196,8 +170,28 @@
         _ => "rgba(61, 214, 163, 0.16)"
     };
 
+    private void OnStateUpdated()
+    {
+        SyncFromState();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void SyncFromState()
+    {
+        eventsPerSecond = LogStreamState.EventsPerSecond;
+        activeRules = LogStreamState.ActiveRules;
+        actionsToday = LogStreamState.ActionsToday;
+        activeSources = LogStreamState.ActiveSources;
+        rulesEvaluated = LogStreamState.RulesEvaluated;
+        actionSuccessRate = LogStreamState.ActionSuccessRate;
+        recentEvents = LogStreamState.GetRecentEvents(50).ToList();
+        recentActions = LogStreamState.GetRecentActions(20).ToList();
+    }
+
     public async ValueTask DisposeAsync()
     {
+        LogStreamState.Updated -= OnStateUpdated;
+
         if (_hubConnection is not null)
         {
             await _hubConnection.DisposeAsync();

@@ -1,23 +1,13 @@
 ﻿@inherits LayoutComponentBase
 
-<div class="page">
-    <div class="sidebar">
+<main class="min-h-screen sentinel-grid">
+    <div class="mx-auto flex max-w-7xl gap-6 px-4 py-6 lg:px-8">
         <NavMenu />
+
+        <section class="flex-1">
+            <div class="sentinel-panel rounded-3xl p-6 shadow-sm">
+                @Body
+            </div>
+        </section>
     </div>
-
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
-
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
-</div>
-
-<div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
-</div>
+</main>

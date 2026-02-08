@@ -1,7 +1,206 @@
-﻿@page "/"
+@page "/"
+@using Microsoft.AspNetCore.SignalR.Client
+@using Sentinel.Core.Models
+@using Sentinel.Web.Hubs
+@implements IAsyncDisposable
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Dashboard</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="space-y-8">
+    <header class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+            <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Sentinel</p>
+            <h1 class="text-3xl font-semibold text-slate-900 dark:text-slate-100">Operational Command</h1>
+            <p class="text-sm text-slate-500">Live telemetry, actioning, and rule performance in real time.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+            <span class="sentinel-pill rounded-full px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">Live Stream</span>
+            <span class="sentinel-pill rounded-full px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-300">@DateTimeOffset.UtcNow:HH:mm UTC</span>
+            <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800">
+                Run Diagnostics
+            </button>
+        </div>
+    </header>
 
-Welcome to your new app.
+    <section class="grid gap-4 md:grid-cols-3">
+        <div class="sentinel-panel rounded-2xl p-4">
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Events / sec</p>
+            <div class="mt-4 flex items-baseline gap-2">
+                <span class="text-3xl font-semibold text-slate-900 dark:text-slate-100">@eventsPerSecond</span>
+                <span class="text-xs text-emerald-600">@trendIndicator</span>
+            </div>
+            <p class="mt-2 text-xs text-slate-500">Streaming from @activeSources sources</p>
+        </div>
+        <div class="sentinel-panel rounded-2xl p-4">
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Active Rules</p>
+            <div class="mt-4 flex items-baseline gap-2">
+                <span class="text-3xl font-semibold text-slate-900 dark:text-slate-100">@activeRules</span>
+                <span class="text-xs text-slate-500">enabled</span>
+            </div>
+            <p class="mt-2 text-xs text-slate-500">@rulesEvaluated checks in last 5 min</p>
+        </div>
+        <div class="sentinel-panel rounded-2xl p-4">
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Actions Today</p>
+            <div class="mt-4 flex items-baseline gap-2">
+                <span class="text-3xl font-semibold text-slate-900 dark:text-slate-100">@actionsToday</span>
+                <span class="text-xs text-slate-500">executed</span>
+            </div>
+            <p class="mt-2 text-xs text-slate-500">@actionSuccessRate% success rate</p>
+        </div>
+    </section>
+
+    <section class="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <div class="sentinel-panel rounded-3xl p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Recent Events</h2>
+                    <p class="text-xs text-slate-500">Streaming last 10 entries</p>
+                </div>
+                <button class="text-xs font-semibold text-slate-500 transition hover:text-slate-900">View full logs</button>
+            </div>
+            <div class="mt-6 space-y-3">
+                @foreach (var evt in recentEvents.TakeLast(10))
+                {
+                    <div class="flex items-center justify-between rounded-2xl border border-slate-100/60 bg-white/70 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div class="flex items-center gap-3">
+                            <span class="h-2.5 w-2.5 rounded-full" style="background-color:@GetLevelColor(evt.Level)"></span>
+                            <div>
+                                <p class="text-sm font-medium text-slate-900 dark:text-slate-100">@evt.Message</p>
+                                <p class="text-xs text-slate-500">@evt.Source.Name · @evt.Timestamp:HH:mm:ss</p>
+                            </div>
+                        </div>
+                        <span class="rounded-full px-3 py-1 text-xs font-semibold" style="background-color:@GetLevelBadge(evt.Level)">@evt.Level</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="sentinel-panel rounded-3xl p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Recent Actions</h2>
+                    <p class="text-xs text-slate-500">Latest automated responses</p>
+                </div>
+                <button class="text-xs font-semibold text-slate-500 transition hover:text-slate-900">History</button>
+            </div>
+            <div class="mt-6 space-y-3">
+                @foreach (var action in recentActions.TakeLast(5))
+                {
+                    <div class="rounded-2xl border border-slate-100/60 bg-white/70 p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div class="flex items-center justify-between">
+                            <p class="font-medium text-slate-900 dark:text-slate-100">@action.Description</p>
+                            <span class="text-xs text-slate-500">@action.Timestamp:HH:mm:ss</span>
+                        </div>
+                        <div class="mt-2 flex items-center justify-between text-xs text-slate-500">
+                            <span>Status: @action.Status</span>
+                            <span>Confidence: @action.Confidence%</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+</div>
+
+@code {
+    private HubConnection? _hubConnection;
+
+    private int eventsPerSecond = 1247;
+    private int activeRules = 42;
+    private int actionsToday = 156;
+    private int activeSources = 9;
+    private int rulesEvaluated = 1480;
+    private int actionSuccessRate = 96;
+    private string trendIndicator = "+5.2%";
+
+    private readonly List<LogEvent> recentEvents =
+    [
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow.AddSeconds(-12),
+            Level = LogLevel.Error,
+            Message = "nginx connection timeout (x3)",
+            Source = new LogSource { Name = "nginx", Platform = Platform.Linux, Type = SourceType.Syslog }
+        },
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow.AddSeconds(-28),
+            Level = LogLevel.Warning,
+            Message = "postgres slow query detected",
+            Source = new LogSource { Name = "postgres", Platform = Platform.Linux, Type = SourceType.Journald }
+        },
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow.AddSeconds(-44),
+            Level = LogLevel.Information,
+            Message = "redis cache hit rate: 94%",
+            Source = new LogSource { Name = "redis", Platform = Platform.Linux, Type = SourceType.DockerContainer }
+        }
+    ];
+
+    private readonly List<ActionRecord> recentActions =
+    [
+        new("Restarted nginx", 95, DateTimeOffset.UtcNow.AddMinutes(-3), ActionStatus.Success),
+        new("Scaling database", 89, DateTimeOffset.UtcNow.AddMinutes(-7), ActionStatus.InProgress),
+        new("Notified on-call via Slack", 92, DateTimeOffset.UtcNow.AddMinutes(-12), ActionStatus.Success)
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl("/hubs/events")
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<LogEvent>("ReceiveLogEvent", evt =>
+        {
+            recentEvents.Add(evt);
+            if (recentEvents.Count > 50)
+            {
+                recentEvents.RemoveAt(0);
+            }
+
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hubConnection.On<ActionRecord>("ReceiveAction", action =>
+        {
+            recentActions.Add(action);
+            actionsToday++;
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hubConnection.On<int>("UpdateMetrics", rate =>
+        {
+            eventsPerSecond = rate;
+            InvokeAsync(StateHasChanged);
+        });
+
+        await _hubConnection.StartAsync();
+    }
+
+    private static string GetLevelColor(LogLevel level) => level switch
+    {
+        LogLevel.Error or LogLevel.Critical => "#ef5b5b",
+        LogLevel.Warning => "#f6b73c",
+        _ => "#3dd6a3"
+    };
+
+    private static string GetLevelBadge(LogLevel level) => level switch
+    {
+        LogLevel.Error or LogLevel.Critical => "rgba(239, 91, 91, 0.15)",
+        LogLevel.Warning => "rgba(246, 183, 60, 0.18)",
+        _ => "rgba(61, 214, 163, 0.16)"
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+}

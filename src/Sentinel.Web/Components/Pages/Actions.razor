@@ -1,4 +1,8 @@
 @page "/actions"
+@using System.Text
+@using Sentinel.Core.Models
+@using Sentinel.Web.Hubs
+@using Sentinel.Web.Services
 
 <PageTitle>Actions</PageTitle>
 
@@ -8,24 +12,84 @@
         <p class="text-sm text-slate-500">Audit trail of automated remediation.</p>
     </header>
 
+    <div class="grid gap-4 md:grid-cols-3">
+        <div class="sentinel-panel rounded-2xl p-4">
+            <label class="text-xs uppercase tracking-[0.2em] text-slate-400">Status</label>
+            <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm" @bind="statusFilter">
+                <option value="All">All</option>
+                <option value="Success">Success</option>
+                <option value="InProgress">In Progress</option>
+                <option value="Failed">Failed</option>
+                <option value="Skipped">Skipped</option>
+            </select>
+        </div>
+        <div class="sentinel-panel rounded-2xl p-4">
+            <label class="text-xs uppercase tracking-[0.2em] text-slate-400">From</label>
+            <input type="date" class="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm" @bind="fromDate" />
+        </div>
+        <div class="sentinel-panel rounded-2xl p-4">
+            <label class="text-xs uppercase tracking-[0.2em] text-slate-400">Search</label>
+            <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm" placeholder="Action or target" @bind="searchTerm" />
+        </div>
+    </div>
+
     <div class="sentinel-panel rounded-3xl p-6">
         <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Latest Actions</h2>
-            <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white">Export CSV</button>
+            <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white" @onclick="ExportCsv">Export CSV</button>
         </div>
         <div class="mt-4 space-y-3">
-            <div class="grid grid-cols-4 gap-3 rounded-2xl border border-slate-100/60 bg-white/70 p-4 text-sm">
-                <span class="text-slate-500">10:39:02</span>
-                <span class="font-medium">Restarted nginx</span>
-                <span class="text-emerald-600">Success</span>
-                <span class="text-slate-500">95% confidence</span>
-            </div>
-            <div class="grid grid-cols-4 gap-3 rounded-2xl border border-slate-100/60 bg-white/70 p-4 text-sm">
-                <span class="text-slate-500">10:31:47</span>
-                <span class="font-medium">Scaled database</span>
-                <span class="text-amber-600">In progress</span>
-                <span class="text-slate-500">89% confidence</span>
-            </div>
+            @foreach (var action in FilteredActions)
+            {
+                <div class="grid grid-cols-4 gap-3 rounded-2xl border border-slate-100/60 bg-white/70 p-4 text-sm">
+                    <span class="text-slate-500">@action.Timestamp:HH:mm:ss</span>
+                    <span class="font-medium">@action.Description</span>
+                    <span class="@GetStatusClass(action.Status)">@action.Status</span>
+                    <span class="text-slate-500">@action.Confidence% confidence</span>
+                </div>
+            }
         </div>
     </div>
 </div>
+
+@code {
+    [Inject] private LogStreamState LogStreamState { get; set; } = null!;
+    [Inject] private IJSRuntime Js { get; set; } = null!;
+
+    private string statusFilter = "All";
+    private DateTime? fromDate = DateTime.UtcNow.Date.AddDays(-1);
+    private string searchTerm = string.Empty;
+
+    private IEnumerable<ActionRecord> FilteredActions =>
+        LogStreamState.GetRecentActions(200)
+            .Where(action => statusFilter == "All" || action.Status.ToString() == statusFilter)
+            .Where(action => fromDate is null || action.Timestamp.Date >= fromDate.Value)
+            .Where(action => string.IsNullOrWhiteSpace(searchTerm) || action.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+
+    private async Task ExportCsv()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Timestamp,Description,Status,Confidence");
+
+        foreach (var action in FilteredActions)
+        {
+            sb.AppendLine($"{action.Timestamp:O},{Escape(action.Description)},{action.Status},{action.Confidence}");
+        }
+
+        await Js.InvokeVoidAsync("sentinelDownload", "actions.csv", sb.ToString());
+    }
+
+    private static string Escape(string input)
+    {
+        var escaped = input.Replace("\"", "\"\"");
+        return $"\"{escaped}\"";
+    }
+
+    private static string GetStatusClass(ActionStatus status) => status switch
+    {
+        ActionStatus.Success => "text-emerald-600",
+        ActionStatus.InProgress => "text-amber-600",
+        ActionStatus.Failed => "text-rose-600",
+        _ => "text-slate-500"
+    };
+}

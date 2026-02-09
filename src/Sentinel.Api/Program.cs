@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Authentication;
+using Sentinel.Api.Auth;
 using Sentinel.Api.Services;
 using Sentinel.Core.Models;
 
@@ -6,6 +8,15 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.Configure<ApiKeyOptions>(
+    builder.Configuration.GetSection(ApiKeyOptions.SectionName));
+builder.Services.AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+        ApiKeyAuthenticationHandler.SchemeName, _ => { });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("Ingestion", policy => policy.RequireRole("Ingestion"));
+});
 builder.Services.AddSingleton<LogDataStore>();
 
 var app = builder.Build();
@@ -17,6 +28,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
 
 var api = app.MapGroup("/api");
 
@@ -31,6 +44,7 @@ api.MapPost("/logs", (LogDataStore store, LogEvent logEvent) =>
     store.AddLog(logEvent);
     return Results.Accepted();
 })
+    .RequireAuthorization("Ingestion")
     .WithName("AddLog");
 
 api.MapGet("/actions", (LogDataStore store, int count) => store.GetActions(count))
@@ -41,6 +55,7 @@ api.MapPost("/actions", (LogDataStore store, ActionEvent actionEvent) =>
     store.AddAction(actionEvent);
     return Results.Accepted();
 })
+    .RequireAuthorization("Ingestion")
     .WithName("AddAction");
 
 api.MapGet("/rules", (LogDataStore store) => store.Rules)

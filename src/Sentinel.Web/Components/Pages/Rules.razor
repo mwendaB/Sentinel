@@ -17,7 +17,7 @@
                 <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white" @onclick="AddRule">Create Rule</button>
             </div>
             <div class="mt-4 space-y-3">
-                @foreach (var rule in RuleStore.Rules)
+                @foreach (var rule in rules)
                 {
                     <div class="rounded-2xl border border-slate-100/60 bg-white/70 p-4">
                         <div class="flex items-center justify-between">
@@ -64,7 +64,7 @@
                 <div class="mt-4 space-y-3 text-sm">
                     <label class="block text-xs uppercase tracking-[0.2em] text-slate-400">Rule</label>
                     <select class="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2" @bind="selectedRuleId">
-                        @foreach (var rule in RuleStore.Rules)
+                        @foreach (var rule in rules)
                         {
                             <option value="@rule.Id">@rule.Name</option>
                         }
@@ -73,7 +73,12 @@
                         <input type="checkbox" class="h-4 w-4 rounded border-slate-300" @bind="dryRun" />
                         Dry-run mode
                     </label>
-                    <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white" @onclick="RunTest">Test Rule</button>
+                    <div class="flex flex-wrap gap-2">
+                        <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white" @onclick="RunTest">Test Rule</button>
+                        <button class="rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700" @onclick="ExecuteRule">
+                            @(dryRun ? "Dry-Run Execute" : "Execute Rule")
+                        </button>
+                    </div>
                     <div class="text-xs text-slate-500">
                         Matches: @testMatches.Count
                     </div>
@@ -99,7 +104,7 @@
 </div>
 
 @code {
-    [Inject] private RuleStore RuleStore { get; set; } = null!;
+    [Inject] private ApiClient ApiClient { get; set; } = null!;
 
     private string newRuleName = "New Rule";
     private string newRulePattern = "error";
@@ -109,40 +114,68 @@
     private Guid selectedRuleId;
     private bool dryRun = true;
     private List<LogEvent> testMatches = new();
+    private List<RuleDefinition> rules = new();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        if (RuleStore.Rules.Count > 0)
+        rules = (await ApiClient.GetRulesAsync()).ToList();
+        if (rules.Count > 0)
         {
-            selectedRuleId = RuleStore.Rules[0].Id;
+            selectedRuleId = rules[0].Id;
         }
     }
 
-    private void AddRule()
+    private async Task AddRule()
     {
         if (string.IsNullOrWhiteSpace(newRuleName) || string.IsNullOrWhiteSpace(newRulePattern))
         {
             return;
         }
 
-        var rule = RuleStore.AddRule(newRuleName, newRulePattern, newRuleLevel, newRuleEnabled);
-        selectedRuleId = rule.Id;
+        var rule = await ApiClient.AddRuleAsync(new NewRuleRequest
+        {
+            Name = newRuleName,
+            Pattern = newRulePattern,
+            MinimumLevel = newRuleLevel,
+            Enabled = newRuleEnabled
+        });
+
+        if (rule is not null)
+        {
+            rules.Add(rule);
+            selectedRuleId = rule.Id;
+        }
     }
 
-    private void ToggleRule(Guid id)
+    private async Task ToggleRule(Guid id)
     {
-        RuleStore.ToggleRule(id);
+        var updated = await ApiClient.ToggleRuleAsync(id);
+        if (updated is null)
+        {
+            return;
+        }
+
+        var index = rules.FindIndex(rule => rule.Id == id);
+        if (index >= 0)
+        {
+            rules[index] = updated;
+        }
     }
 
-    private void RunTest()
+    private async Task RunTest()
     {
-        var rule = RuleStore.Rules.FirstOrDefault(r => r.Id == selectedRuleId);
-        if (rule is null)
+        var result = await ApiClient.TestRuleAsync(selectedRuleId);
+        if (result is null)
         {
             testMatches = new List<LogEvent>();
             return;
         }
 
-        testMatches = RuleStore.TestRule(rule).ToList();
+        testMatches = result.Matches.ToList();
+    }
+
+    private async Task ExecuteRule()
+    {
+        await ApiClient.ExecuteRuleAsync(selectedRuleId, dryRun);
     }
 }

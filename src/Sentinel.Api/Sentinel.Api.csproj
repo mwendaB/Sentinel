@@ -4,7 +4,11 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
+</PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\\Sentinel.Core\\Sentinel.Core.csproj" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />

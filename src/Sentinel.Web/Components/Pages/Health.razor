@@ -1,0 +1,25 @@
+@page "/health"
+
+<PageTitle>System Health</PageTitle>
+
+<div class="space-y-6">
+    <header>
+        <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">System Health</h1>
+        <p class="text-sm text-slate-500">Component status and alert history.</p>
+    </header>
+
+    <div class="grid gap-4 md:grid-cols-3">
+        <div class="sentinel-panel rounded-3xl p-6">
+            <h2 class="text-lg font-semibold">Ingestion</h2>
+            <p class="text-sm text-emerald-600">Healthy</p>
+        </div>
+        <div class="sentinel-panel rounded-3xl p-6">
+            <h2 class="text-lg font-semibold">Analysis</h2>
+            <p class="text-sm text-emerald-600">Healthy</p>
+        </div>
+        <div class="sentinel-panel rounded-3xl p-6">
+            <h2 class="text-lg font-semibold">Remediation</h2>
+            <p class="text-sm text-amber-600">Degraded</p>
+        </div>
+    </div>
+</div>

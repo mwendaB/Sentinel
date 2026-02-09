@@ -1,23 +1,69 @@
 ﻿@inherits LayoutComponentBase
 
-<div class="page">
-    <div class="sidebar">
+<main class="min-h-screen sentinel-grid">
+    <div class="mx-auto flex max-w-7xl gap-6 px-4 py-6 lg:px-8">
         <NavMenu />
+
+        <section class="flex-1 space-y-4">
+            <div class="flex items-center justify-between rounded-2xl bg-white/70 px-4 py-3 shadow-sm lg:hidden">
+                <div class="text-sm font-semibold text-slate-900">Sentinel</div>
+                <button class="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white" @onclick="ToggleMobileNav">
+                    Menu
+                </button>
+            </div>
+
+            <div class="sentinel-panel rounded-3xl p-6 shadow-sm">
+                @Body
+            </div>
+        </section>
     </div>
 
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+    <div class="@MobileOverlayClass">
+        <div class="absolute inset-0 bg-slate-900/50" @onclick="ToggleMobileNav"></div>
+        <div class="relative ml-auto h-full w-72 bg-white p-6 shadow-xl">
+            <div class="flex items-center justify-between">
+                <span class="text-sm font-semibold text-slate-900">Navigation</span>
+                <button class="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700" @onclick="ToggleMobileNav">
+                    Close
+                </button>
+            </div>
+            <nav class="mt-6 flex flex-col gap-2 text-sm">
+                <NavLink class="rounded-xl px-3 py-2 font-medium text-slate-700 transition hover:text-slate-900" href="" Match="NavLinkMatch.All">
+                    Dashboard
+                </NavLink>
+                <NavLink class="rounded-xl px-3 py-2 font-medium text-slate-700 transition hover:text-slate-900" href="logs">
+                    Live Logs
+                </NavLink>
+                <NavLink class="rounded-xl px-3 py-2 font-medium text-slate-700 transition hover:text-slate-900" href="rules">
+                    Rules
+                </NavLink>
+                <NavLink class="rounded-xl px-3 py-2 font-medium text-slate-700 transition hover:text-slate-900" href="actions">
+                    Actions
+                </NavLink>
+                <NavLink class="rounded-xl px-3 py-2 font-medium text-slate-700 transition hover:text-slate-900" href="metrics">
+                    Metrics
+                </NavLink>
+                <NavLink class="rounded-xl px-3 py-2 font-medium text-slate-700 transition hover:text-slate-900" href="configuration">
+                    Configuration
+                </NavLink>
+                <NavLink class="rounded-xl px-3 py-2 font-medium text-slate-700 transition hover:text-slate-900" href="health">
+                    System Health
+                </NavLink>
+            </nav>
         </div>
+    </div>
+</main>
 
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
-</div>
+@code {
+    private bool showMobileNav;
 
-<div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
-</div>
+    private string MobileOverlayClass =>
+        showMobileNav
+            ? "fixed inset-0 z-50 flex"
+            : "hidden";
+
+    private void ToggleMobileNav()
+    {
+        showMobileNav = !showMobileNav;
+    }
+}

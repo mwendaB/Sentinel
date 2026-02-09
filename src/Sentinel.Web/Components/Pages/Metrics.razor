@@ -1,0 +1,23 @@
+@page "/metrics"
+
+<PageTitle>Metrics</PageTitle>
+
+<div class="space-y-6">
+    <header>
+        <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">Metrics</h1>
+        <p class="text-sm text-slate-500">Throughput, latency, and system performance.</p>
+    </header>
+
+    <div class="grid gap-4 md:grid-cols-2">
+        <div class="sentinel-panel rounded-3xl p-6">
+            <h2 class="text-lg font-semibold">Throughput</h2>
+            <p class="text-sm text-slate-500">1,247 events/sec</p>
+            <div class="mt-4 h-32 rounded-2xl bg-gradient-to-r from-emerald-200/60 to-emerald-500/30"></div>
+        </div>
+        <div class="sentinel-panel rounded-3xl p-6">
+            <h2 class="text-lg font-semibold">Latency</h2>
+            <p class="text-sm text-slate-500">p95: 220ms</p>
+            <div class="mt-4 h-32 rounded-2xl bg-gradient-to-r from-sky-200/60 to-indigo-500/30"></div>
+        </div>
+    </div>
+</div>

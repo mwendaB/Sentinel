@@ -1,10 +1,20 @@
 using Sentinel.Web.Components;
+using Sentinel.Web.Hubs;
+using Sentinel.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<LogStreamState>();
+builder.Services.AddHttpClient<ApiClient>(client =>
+{
+    var baseUrl = builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5104";
+    client.BaseAddress = new Uri(baseUrl);
+});
+builder.Services.AddHostedService<ApiStreamBridge>();
 
 var app = builder.Build();
 
@@ -24,5 +34,6 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+app.MapHub<EventsHub>("/hubs/events");
 
 app.Run();

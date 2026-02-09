@@ -5,7 +5,15 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-Sentinel.Worker-14cd021a-0309-4dcd-b520-be29062e8dc9</UserSecretsId>
-  </PropertyGroup>
+</PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\\Sentinel.Core\\Sentinel.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" />

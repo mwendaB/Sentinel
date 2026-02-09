@@ -9,8 +9,12 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<LogStreamState>();
-builder.Services.AddSingleton<RuleStore>();
-builder.Services.AddHostedService<LogStreamSimulator>();
+builder.Services.AddHttpClient<ApiClient>(client =>
+{
+    var baseUrl = builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5104";
+    client.BaseAddress = new Uri(baseUrl);
+});
+builder.Services.AddHostedService<ApiStreamBridge>();
 
 var app = builder.Build();
 

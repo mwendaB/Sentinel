@@ -25,6 +25,37 @@ public sealed class LogStreamState
     public IReadOnlyList<ActionRecord> GetRecentActions(int count) =>
         _actions.Reverse().Take(count).Reverse().ToList();
 
+    public void ReplaceMetrics(MetricsSnapshot metrics)
+    {
+        EventsPerSecond = metrics.EventsPerSecond;
+        ActiveRules = metrics.ActiveRules;
+        ActionsToday = metrics.ActionsToday;
+        ActiveSources = metrics.ActiveSources;
+        RulesEvaluated = metrics.RulesEvaluated;
+        ActionSuccessRate = metrics.ActionSuccessRate;
+        Updated?.Invoke();
+    }
+
+    public void ReplaceEvents(IReadOnlyList<LogEvent> events)
+    {
+        Clear(_events);
+        foreach (var logEvent in events)
+        {
+            _events.Enqueue(logEvent);
+        }
+        Updated?.Invoke();
+    }
+
+    public void ReplaceActions(IReadOnlyList<ActionEvent> actions)
+    {
+        Clear(_actions);
+        foreach (var action in actions)
+        {
+            _actions.Enqueue(new ActionRecord(action.Description, action.Confidence, action.Timestamp, action.Status));
+        }
+        Updated?.Invoke();
+    }
+
     public void AddEvent(LogEvent logEvent)
     {
         _events.Enqueue(logEvent);
@@ -88,6 +119,13 @@ public sealed class LogStreamState
     private static void Trim<T>(ConcurrentQueue<T> queue, int max)
     {
         while (queue.Count > max && queue.TryDequeue(out _))
+        {
+        }
+    }
+
+    private static void Clear<T>(ConcurrentQueue<T> queue)
+    {
+        while (queue.TryDequeue(out _))
         {
         }
     }

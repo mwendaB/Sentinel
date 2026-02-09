@@ -39,6 +39,8 @@ public sealed class Worker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _httpClient.BaseAddress = new Uri(_apiOptions.BaseUrl);
+        _httpClient.DefaultRequestHeaders.Remove("X-Api-Key");
+        _httpClient.DefaultRequestHeaders.Add("X-Api-Key", _apiOptions.ApiKey);
 
         while (!stoppingToken.IsCancellationRequested)
         {

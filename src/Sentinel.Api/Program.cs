@@ -2,7 +2,9 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Sentinel.Api.Auth;
 using Sentinel.Api.Persistence;
+using Sentinel.Core.Interfaces;
 using Sentinel.Core.Models;
+using Sentinel.Remediation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +22,9 @@ builder.Services.AddAuthorization(options =>
 });
 builder.Services.AddDbContext<SentinelDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("SentinelDb")));
+builder.Services.Configure<RemediationOptions>(
+    builder.Configuration.GetSection(RemediationOptions.SectionName));
+builder.Services.AddSingleton<IRemediationExecutor, LocalRemediationExecutor>();
 
 var app = builder.Build();
 
@@ -159,21 +164,39 @@ api.MapPost("/rules/{ruleId:guid}/test", async (SentinelDbContext db, Guid ruleI
 })
     .WithName("TestRule");
 
-api.MapPost("/rules/{ruleId:guid}/execute", async (SentinelDbContext db, Guid ruleId, bool dryRun) =>
+api.MapPost("/rules/{ruleId:guid}/execute", async (
+    SentinelDbContext db,
+    IRemediationExecutor remediationExecutor,
+    Guid ruleId,
+    bool dryRun,
+    CancellationToken cancellationToken) =>
 {
-    var rule = await db.Rules.FirstOrDefaultAsync(r => r.Id == ruleId);
+    var rule = await db.Rules.FirstOrDefaultAsync(r => r.Id == ruleId, cancellationToken);
     if (rule is null)
     {
         return Results.NotFound();
     }
 
-    var result = new RemediationActionResult
+    var action = new SendNotificationAction
     {
-        ActionId = Guid.NewGuid(),
-        Status = dryRun ? ActionStatus.Skipped : ActionStatus.Success,
-        Timestamp = DateTimeOffset.UtcNow,
-        Details = dryRun ? "Dry-run" : "Executed"
+        Id = Guid.NewGuid(),
+        ActionType = ActionType.SendNotification,
+        TargetResource = rule.Name,
+        Confidence = 92,
+        Reason = $"Rule executed: {rule.Name}",
+        Channel = NotificationChannel.Email,
+        Message = $"Rule '{rule.Name}' executed."
     };
+
+    var result = dryRun
+        ? new RemediationActionResult
+        {
+            ActionId = action.Id,
+            Status = ActionStatus.Skipped,
+            Timestamp = DateTimeOffset.UtcNow,
+            Details = "Dry-run"
+        }
+        : await remediationExecutor.ExecuteAsync(action, cancellationToken);
 
     ActionEvent? actionEvent = null;
     if (!dryRun)
@@ -181,14 +204,14 @@ api.MapPost("/rules/{ruleId:guid}/execute", async (SentinelDbContext db, Guid ru
         actionEvent = new ActionEvent
         {
             Id = Guid.NewGuid(),
-            Description = $"Executed rule: {rule.Name}",
-            Confidence = 92,
+            Description = $"{action.ActionType}: {action.TargetResource}",
+            Confidence = action.Confidence,
             Timestamp = result.Timestamp,
-            Status = ActionStatus.Success
+            Status = result.Status
         };
 
         db.ActionEvents.Add(actionEvent);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     return Results.Ok(new RuleExecutionResponse

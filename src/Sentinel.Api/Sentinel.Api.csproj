@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\\Sentinel.Core\\Sentinel.Core.csproj" />
+    <ProjectReference Include="..\\Sentinel.Remediation\\Sentinel.Remediation.csproj" />
   </ItemGroup>
 
   <ItemGroup>

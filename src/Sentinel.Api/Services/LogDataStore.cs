@@ -124,6 +124,7 @@ public sealed class LogDataStore
         {
             actionEvent = new ActionEvent
             {
+                Id = Guid.NewGuid(),
                 Description = $"Executed rule: {rule.Name}",
                 Confidence = 92,
                 Timestamp = result.Timestamp,

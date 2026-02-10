@@ -65,6 +65,7 @@ public sealed class Worker : BackgroundService
             {
                 var actionEvent = new ActionEvent
                 {
+                    Id = Guid.NewGuid(),
                     Description = "Restarted service",
                     Confidence = _random.Next(75, 98),
                     Timestamp = DateTimeOffset.UtcNow,

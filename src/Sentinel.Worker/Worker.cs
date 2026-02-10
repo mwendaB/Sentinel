@@ -1,6 +1,6 @@
-using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using Sentinel.Core.Models;
+using Sentinel.Worker.Ingestion;
 using Models = Sentinel.Core.Models;
 
 namespace Sentinel.Worker;
@@ -8,9 +8,9 @@ namespace Sentinel.Worker;
 public sealed class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
-    private readonly HttpClient _httpClient;
-    private readonly ApiOptions _apiOptions;
+    private readonly IngestionApiClient _apiClient;
     private readonly Random _random = new();
+    private readonly SyntheticOptions _syntheticOptions;
 
     private static readonly LogSource[] Sources =
     [
@@ -29,18 +29,23 @@ public sealed class Worker : BackgroundService
         "cache miss spike"
     ];
 
-    public Worker(ILogger<Worker> logger, HttpClient httpClient, IOptions<ApiOptions> apiOptions)
+    public Worker(
+        ILogger<Worker> logger,
+        IngestionApiClient apiClient,
+        IOptions<IngestionOptions> ingestionOptions)
     {
         _logger = logger;
-        _httpClient = httpClient;
-        _apiOptions = apiOptions.Value;
+        _apiClient = apiClient;
+        _syntheticOptions = ingestionOptions.Value.Synthetic;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _httpClient.BaseAddress = new Uri(_apiOptions.BaseUrl);
-        _httpClient.DefaultRequestHeaders.Remove("X-Api-Key");
-        _httpClient.DefaultRequestHeaders.Add("X-Api-Key", _apiOptions.ApiKey);
+        if (!_syntheticOptions.Enabled)
+        {
+            _logger.LogInformation("Synthetic ingestion disabled.");
+            return;
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -54,7 +59,7 @@ public sealed class Worker : BackgroundService
                 Source = source
             };
 
-            await PostAsync("/api/logs", logEvent, stoppingToken);
+            await _apiClient.SendLogAsync(logEvent, stoppingToken);
 
             if (_random.NextDouble() > 0.82)
             {
@@ -65,8 +70,7 @@ public sealed class Worker : BackgroundService
                     Timestamp = DateTimeOffset.UtcNow,
                     Status = ActionStatus.Success
                 };
-
-                await PostAsync("/api/actions", actionEvent, stoppingToken);
+                await _apiClient.SendActionAsync(actionEvent, stoppingToken);
             }
 
             if (_logger.IsEnabled(Microsoft.Extensions.Logging.LogLevel.Information))
@@ -76,12 +80,6 @@ public sealed class Worker : BackgroundService
 
             await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
         }
-    }
-
-    private async Task PostAsync<T>(string path, T payload, CancellationToken cancellationToken)
-    {
-        var response = await _httpClient.PostAsJsonAsync(path, payload, cancellationToken);
-        response.EnsureSuccessStatusCode();
     }
 
     private LogSource PickSource() => Sources[_random.Next(Sources.Length)];

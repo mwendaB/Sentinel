@@ -1,0 +1,28 @@
+@page "/logout"
+@attribute [AllowAnonymous]
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+
+<PageTitle>Sign Out</PageTitle>
+
+<div class="flex min-h-[60vh] items-center justify-center">
+    <div class="sentinel-panel w-full max-w-md rounded-3xl p-8 text-center">
+        <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Signing out...</h1>
+    </div>
+</div>
+
+@code {
+    [Inject] private IHttpContextAccessor HttpContextAccessor { get; set; } = null!;
+    [Inject] private NavigationManager Nav { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var context = HttpContextAccessor.HttpContext;
+        if (context is not null)
+        {
+            await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        }
+
+        Nav.NavigateTo("/login", forceLoad: true);
+    }
+}

@@ -6,6 +6,11 @@ namespace Sentinel.Core.Models;
 public sealed record ActionEvent
 {
     /// <summary>
+    /// Unique identifier for the action event.
+    /// </summary>
+    public required Guid Id { get; init; } = Guid.NewGuid();
+
+    /// <summary>
     /// Human-readable description of the action.
     /// </summary>
     public required string Description { get; init; }

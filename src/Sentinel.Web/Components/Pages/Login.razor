@@ -1,0 +1,79 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+
+<PageTitle>Sign In</PageTitle>
+
+<div class="flex min-h-[70vh] items-center justify-center">
+    <div class="sentinel-panel w-full max-w-md rounded-3xl p-8">
+        <div class="space-y-2">
+            <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">Sign in</h1>
+            <p class="text-sm text-slate-500">Use a local dev identity to access Sentinel.</p>
+        </div>
+
+        <EditForm Model="model" OnValidSubmit="HandleLogin" class="mt-6 space-y-4">
+            <div>
+                <label class="text-xs uppercase tracking-[0.2em] text-slate-400">Email</label>
+                <InputText class="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm" @bind-Value="model.Email" />
+            </div>
+            <div>
+                <label class="text-xs uppercase tracking-[0.2em] text-slate-400">Role</label>
+                <InputSelect class="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm" @bind-Value="model.Role">
+                    <option value="Admin">Admin</option>
+                    <option value="Operator">Operator</option>
+                    <option value="Viewer">Viewer</option>
+                </InputSelect>
+            </div>
+            <button type="submit" class="w-full rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white">
+                Continue
+            </button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [Inject] private NavigationManager Nav { get; set; } = null!;
+    [Inject] private IHttpContextAccessor HttpContextAccessor { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    private LoginModel model = new();
+
+    private async Task HandleLogin()
+    {
+        if (AuthenticationStateTask is not null)
+        {
+            var authState = await AuthenticationStateTask;
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                Nav.NavigateTo("/");
+                return;
+            }
+        }
+
+        var claims = new List<System.Security.Claims.Claim>
+        {
+            new(System.Security.Claims.ClaimTypes.Name, model.Email),
+            new(System.Security.Claims.ClaimTypes.Email, model.Email),
+            new(System.Security.Claims.ClaimTypes.Role, model.Role)
+        };
+
+        var identity = new System.Security.Claims.ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        var principal = new System.Security.Claims.ClaimsPrincipal(identity);
+
+        var context = HttpContextAccessor.HttpContext;
+        if (context is null)
+        {
+            return;
+        }
+
+        await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
+        Nav.NavigateTo("/");
+    }
+
+    private sealed class LoginModel
+    {
+        public string Email { get; set; } = "admin@sentinel.local";
+        public string Role { get; set; } = "Admin";
+    }
+}

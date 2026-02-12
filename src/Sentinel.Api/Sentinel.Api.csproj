@@ -8,6 +8,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\\Sentinel.Core\\Sentinel.Core.csproj" />
+    <ProjectReference Include="..\\Sentinel.Remediation\\Sentinel.Remediation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>

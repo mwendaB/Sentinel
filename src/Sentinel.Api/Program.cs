@@ -117,7 +117,8 @@ api.MapPost("/rules", async (SentinelDbContext db, NewRuleRequest request) =>
         Name = request.Name,
         Pattern = request.Pattern,
         MinimumLevel = request.MinimumLevel,
-        Enabled = request.Enabled
+        Enabled = request.Enabled,
+        Action = NormalizeRuleAction(request.Action, request.Name)
     };
 
     db.Rules.Add(rule);
@@ -177,9 +178,8 @@ api.MapPost("/rules/{ruleId:guid}/execute", async (
         return Results.NotFound();
     }
 
-    var action = new SendNotificationAction
+    var actionDefinition = rule.Action ?? new RemediationActionDefinition
     {
-        Id = Guid.NewGuid(),
         ActionType = ActionType.SendNotification,
         TargetResource = rule.Name,
         Confidence = 92,
@@ -187,6 +187,11 @@ api.MapPost("/rules/{ruleId:guid}/execute", async (
         Channel = NotificationChannel.Email,
         Message = $"Rule '{rule.Name}' executed."
     };
+
+    if (!TryBuildAction(actionDefinition, rule.Name, out var action, out var error))
+    {
+        return Results.BadRequest(new { error });
+    }
 
     var result = dryRun
         ? new RemediationActionResult
@@ -221,5 +226,151 @@ api.MapPost("/rules/{ruleId:guid}/execute", async (
     });
 })
     .WithName("ExecuteRule");
+
+api.MapPost("/remediation/execute", async (
+    IRemediationExecutor remediationExecutor,
+    SentinelDbContext db,
+    RemediationActionDefinition actionDefinition,
+    bool dryRun,
+    CancellationToken cancellationToken) =>
+{
+    if (!TryBuildAction(actionDefinition, null, out var action, out var error))
+    {
+        return Results.BadRequest(new { error });
+    }
+
+    var result = dryRun
+        ? new RemediationActionResult
+        {
+            ActionId = action.Id,
+            Status = ActionStatus.Skipped,
+            Timestamp = DateTimeOffset.UtcNow,
+            Details = "Dry-run"
+        }
+        : await remediationExecutor.ExecuteAsync(action, cancellationToken);
+
+    ActionEvent? actionEvent = null;
+    if (!dryRun)
+    {
+        actionEvent = new ActionEvent
+        {
+            Id = Guid.NewGuid(),
+            Description = $"{action.ActionType}: {action.TargetResource}",
+            Confidence = action.Confidence,
+            Timestamp = result.Timestamp,
+            Status = result.Status
+        };
+
+        db.ActionEvents.Add(actionEvent);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    return Results.Ok(new RemediationExecutionResponse
+    {
+        Result = result,
+        ActionEvent = actionEvent
+    });
+})
+    .WithName("ExecuteRemediation");
+
+static RemediationActionDefinition? NormalizeRuleAction(RemediationActionDefinition? definition, string ruleName)
+{
+    if (definition is null)
+    {
+        return null;
+    }
+
+    var target = string.IsNullOrWhiteSpace(definition.TargetResource) ? ruleName : definition.TargetResource;
+    return definition with { TargetResource = target };
+}
+
+static bool TryBuildAction(
+    RemediationActionDefinition definition,
+    string? fallbackTarget,
+    out RemediationAction action,
+    out string error)
+{
+    action = null!;
+    error = string.Empty;
+
+    var target = string.IsNullOrWhiteSpace(definition.TargetResource) ? fallbackTarget : definition.TargetResource;
+    if (string.IsNullOrWhiteSpace(target))
+    {
+        error = "TargetResource is required.";
+        return false;
+    }
+
+    if (definition.Confidence is < 0 or > 100)
+    {
+        error = "Confidence must be between 0 and 100.";
+        return false;
+    }
+
+    switch (definition.ActionType)
+    {
+        case ActionType.RestartService:
+            {
+                var serviceName = string.IsNullOrWhiteSpace(definition.ServiceName) ? target : definition.ServiceName;
+                if (string.IsNullOrWhiteSpace(serviceName))
+                {
+                    error = "ServiceName is required for RestartService actions.";
+                    return false;
+                }
+
+                action = new RestartServiceAction
+                {
+                    Id = Guid.NewGuid(),
+                    ActionType = definition.ActionType,
+                    TargetResource = target,
+                    Confidence = definition.Confidence,
+                    Reason = definition.Reason,
+                    ServiceName = serviceName
+                };
+                return true;
+            }
+        case ActionType.ScaleReplicas:
+            {
+                if (!definition.DesiredReplicas.HasValue)
+                {
+                    error = "DesiredReplicas is required for ScaleReplicas actions.";
+                    return false;
+                }
+
+                action = new ScaleResourceAction
+                {
+                    Id = Guid.NewGuid(),
+                    ActionType = definition.ActionType,
+                    TargetResource = target,
+                    Confidence = definition.Confidence,
+                    Reason = definition.Reason,
+                    DesiredReplicas = definition.DesiredReplicas.Value
+                };
+                return true;
+            }
+        case ActionType.SendNotification:
+            {
+                if (!definition.Channel.HasValue || string.IsNullOrWhiteSpace(definition.Message))
+                {
+                    error = "Channel and Message are required for SendNotification actions.";
+                    return false;
+                }
+
+                action = new SendNotificationAction
+                {
+                    Id = Guid.NewGuid(),
+                    ActionType = definition.ActionType,
+                    TargetResource = target,
+                    Confidence = definition.Confidence,
+                    Reason = definition.Reason,
+                    Channel = definition.Channel.Value,
+                    Message = definition.Message
+                };
+                return true;
+            }
+        default:
+            error = $"Action type {definition.ActionType} is not supported yet.";
+            return false;
+    }
+}
 
 app.Run();

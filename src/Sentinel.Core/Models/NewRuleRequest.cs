@@ -9,4 +9,5 @@ public sealed record NewRuleRequest
     public required string Pattern { get; init; }
     public required LogLevel MinimumLevel { get; init; }
     public required bool Enabled { get; init; }
+    public RemediationActionDefinition? Action { get; init; }
 }

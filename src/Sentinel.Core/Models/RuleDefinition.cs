@@ -63,6 +63,11 @@ public sealed record RuleDefinition
     public required LogLevel MinimumLevel { get; init; }
 
     /// <summary>
+    /// Optional remediation action to execute when the rule matches.
+    /// </summary>
+    public RemediationActionDefinition? Action { get; init; }
+
+    /// <summary>
     /// Optional source types this rule applies to.
     /// </summary>
     public IReadOnlyCollection<SourceType>? SourceTypes { get; init; }

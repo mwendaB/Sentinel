@@ -1,12 +1,33 @@
+using System.Threading.Channels;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Serilog;
+using Sentinel.Analysis;
 using Sentinel.Api.Auth;
 using Sentinel.Api.Persistence;
+using Sentinel.Api.Services;
 using Sentinel.Core.Interfaces;
 using Sentinel.Core.Models;
+using Sentinel.Core.Services;
 using Sentinel.Remediation;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, services, configuration) =>
+{
+    configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext();
+});
+
+var serviceName = builder.Environment.ApplicationName ?? "Sentinel.Api";
+var serviceVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
+var otlpEndpoint = builder.Configuration["Otel:OtlpEndpoint"];
+var useConsoleExporter = builder.Configuration.GetValue("Otel:ConsoleExporter", false);
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -25,6 +46,50 @@ builder.Services.AddDbContext<SentinelDbContext>(options =>
 builder.Services.Configure<RemediationOptions>(
     builder.Configuration.GetSection(RemediationOptions.SectionName));
 builder.Services.AddSingleton<IRemediationExecutor, LocalRemediationExecutor>();
+builder.Services.AddSingleton<IRuleEngine, RuleEngine>();
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource =>
+        resource.AddService(serviceName, serviceVersion: serviceVersion, serviceInstanceId: Environment.MachineName))
+    .WithTracing(tracing =>
+    {
+        tracing.AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation();
+
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            tracing.AddOtlpExporter(options => options.Endpoint = new Uri(otlpEndpoint));
+        }
+
+        if (useConsoleExporter)
+        {
+            tracing.AddConsoleExporter();
+        }
+    })
+    .WithMetrics(metrics =>
+    {
+        metrics.AddAspNetCoreInstrumentation()
+            .AddRuntimeInstrumentation();
+
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            metrics.AddOtlpExporter(options => options.Endpoint = new Uri(otlpEndpoint));
+        }
+
+        if (useConsoleExporter)
+        {
+            metrics.AddConsoleExporter();
+        }
+    });
+
+var logChannel = Channel.CreateUnbounded<LogEvent>(new UnboundedChannelOptions
+{
+    SingleReader = true,
+    SingleWriter = false
+});
+builder.Services.AddSingleton(logChannel);
+builder.Services.AddSingleton<ChannelReader<LogEvent>>(sp => sp.GetRequiredService<Channel<LogEvent>>().Reader);
+builder.Services.AddSingleton<ChannelWriter<LogEvent>>(sp => sp.GetRequiredService<Channel<LogEvent>>().Writer);
+builder.Services.AddHostedService<RuleEvaluationService>();
 
 var app = builder.Build();
 
@@ -81,10 +146,15 @@ api.MapGet("/logs", async (SentinelDbContext db, int count) =>
         .ToListAsync())
     .WithName("GetLogs");
 
-api.MapPost("/logs", async (SentinelDbContext db, LogEvent logEvent) =>
+api.MapPost("/logs", async (
+    SentinelDbContext db,
+    ChannelWriter<LogEvent> logWriter,
+    LogEvent logEvent,
+    CancellationToken cancellationToken) =>
 {
     db.LogEvents.Add(logEvent);
-    await db.SaveChangesAsync();
+    await db.SaveChangesAsync(cancellationToken);
+    await logWriter.WriteAsync(logEvent, cancellationToken);
     return Results.Accepted();
 })
     .RequireAuthorization("Ingestion")
@@ -188,7 +258,7 @@ api.MapPost("/rules/{ruleId:guid}/execute", async (
         Message = $"Rule '{rule.Name}' executed."
     };
 
-    if (!TryBuildAction(actionDefinition, rule.Name, out var action, out var error))
+    if (!RemediationActionFactory.TryCreate(actionDefinition, rule.Name, out var action, out var error))
     {
         return Results.BadRequest(new { error });
     }
@@ -234,7 +304,7 @@ api.MapPost("/remediation/execute", async (
     bool dryRun,
     CancellationToken cancellationToken) =>
 {
-    if (!TryBuildAction(actionDefinition, null, out var action, out var error))
+    if (!RemediationActionFactory.TryCreate(actionDefinition, null, out var action, out var error))
     {
         return Results.BadRequest(new { error });
     }
@@ -282,95 +352,6 @@ static RemediationActionDefinition? NormalizeRuleAction(RemediationActionDefinit
 
     var target = string.IsNullOrWhiteSpace(definition.TargetResource) ? ruleName : definition.TargetResource;
     return definition with { TargetResource = target };
-}
-
-static bool TryBuildAction(
-    RemediationActionDefinition definition,
-    string? fallbackTarget,
-    out RemediationAction action,
-    out string error)
-{
-    action = null!;
-    error = string.Empty;
-
-    var target = string.IsNullOrWhiteSpace(definition.TargetResource) ? fallbackTarget : definition.TargetResource;
-    if (string.IsNullOrWhiteSpace(target))
-    {
-        error = "TargetResource is required.";
-        return false;
-    }
-
-    if (definition.Confidence is < 0 or > 100)
-    {
-        error = "Confidence must be between 0 and 100.";
-        return false;
-    }
-
-    switch (definition.ActionType)
-    {
-        case ActionType.RestartService:
-            {
-                var serviceName = string.IsNullOrWhiteSpace(definition.ServiceName) ? target : definition.ServiceName;
-                if (string.IsNullOrWhiteSpace(serviceName))
-                {
-                    error = "ServiceName is required for RestartService actions.";
-                    return false;
-                }
-
-                action = new RestartServiceAction
-                {
-                    Id = Guid.NewGuid(),
-                    ActionType = definition.ActionType,
-                    TargetResource = target,
-                    Confidence = definition.Confidence,
-                    Reason = definition.Reason,
-                    ServiceName = serviceName
-                };
-                return true;
-            }
-        case ActionType.ScaleReplicas:
-            {
-                if (!definition.DesiredReplicas.HasValue)
-                {
-                    error = "DesiredReplicas is required for ScaleReplicas actions.";
-                    return false;
-                }
-
-                action = new ScaleResourceAction
-                {
-                    Id = Guid.NewGuid(),
-                    ActionType = definition.ActionType,
-                    TargetResource = target,
-                    Confidence = definition.Confidence,
-                    Reason = definition.Reason,
-                    DesiredReplicas = definition.DesiredReplicas.Value
-                };
-                return true;
-            }
-        case ActionType.SendNotification:
-            {
-                if (!definition.Channel.HasValue || string.IsNullOrWhiteSpace(definition.Message))
-                {
-                    error = "Channel and Message are required for SendNotification actions.";
-                    return false;
-                }
-
-                action = new SendNotificationAction
-                {
-                    Id = Guid.NewGuid(),
-                    ActionType = definition.ActionType,
-                    TargetResource = target,
-                    Confidence = definition.Confidence,
-                    Reason = definition.Reason,
-                    Channel = definition.Channel.Value,
-                    Message = definition.Message
-                };
-                return true;
-            }
-        default:
-            error = $"Action type {definition.ActionType} is not supported yet.";
-            return false;
-    }
 }
 
 app.Run();

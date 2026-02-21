@@ -7,6 +7,7 @@
 </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\\Sentinel.Analysis\\Sentinel.Analysis.csproj" />
     <ProjectReference Include="..\\Sentinel.Core\\Sentinel.Core.csproj" />
     <ProjectReference Include="..\\Sentinel.Remediation\\Sentinel.Remediation.csproj" />
   </ItemGroup>
@@ -21,6 +22,16 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Exporter.Console" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Settings.Configuration" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>
 
 </Project>

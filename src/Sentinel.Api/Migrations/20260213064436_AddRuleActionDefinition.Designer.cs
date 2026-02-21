@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sentinel.Api.Persistence;
 
@@ -10,9 +11,11 @@ using Sentinel.Api.Persistence;
 namespace Sentinel.Api.Migrations
 {
     [DbContext(typeof(SentinelDbContext))]
-    partial class SentinelDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260213064436_AddRuleActionDefinition")]
+    partial class AddRuleActionDefinition
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.12");

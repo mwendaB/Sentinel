@@ -1,4 +1,4 @@
-﻿namespace Sentinel.Shared;
+namespace Sentinel.Shared;
 
 public class Class1
 {

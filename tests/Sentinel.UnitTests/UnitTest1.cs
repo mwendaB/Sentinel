@@ -1,4 +1,4 @@
-﻿namespace Sentinel.UnitTests;
+namespace Sentinel.UnitTests;
 
 public class UnitTest1
 {

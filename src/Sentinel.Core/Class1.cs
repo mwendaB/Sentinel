@@ -1,4 +1,4 @@
-﻿namespace Sentinel.Core;
+namespace Sentinel.Core;
 
 public class Class1
 {

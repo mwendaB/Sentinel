@@ -1,4 +1,4 @@
-﻿namespace Sentinel.Analysis;
+namespace Sentinel.Analysis;
 
 public class Class1
 {

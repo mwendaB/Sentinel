@@ -1,4 +1,5 @@
 @page "/logs"
+@using System.Text.RegularExpressions
 @using Sentinel.Core.Models
 @using Sentinel.Web.Services
 @implements IDisposable
@@ -34,6 +35,25 @@
         <div class="sentinel-panel rounded-2xl p-4">
             <label class="text-xs uppercase tracking-[0.2em] text-slate-400">Search</label>
             <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm" placeholder="Regex or keyword" @bind="searchTerm" />
+            <label class="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                <input type="checkbox" class="h-4 w-4 rounded border-slate-300" @bind="useRegex" />
+                Use regex
+            </label>
+            @if (!string.IsNullOrWhiteSpace(regexError))
+            {
+                <div class="mt-2 text-xs text-rose-500">@regexError</div>
+            }
+        </div>
+    </div>
+
+    <div class="grid gap-4 md:grid-cols-2">
+        <div class="sentinel-panel rounded-2xl p-4">
+            <label class="text-xs uppercase tracking-[0.2em] text-slate-400">From</label>
+            <input type="datetime-local" class="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm" @bind="fromTime" />
+        </div>
+        <div class="sentinel-panel rounded-2xl p-4">
+            <label class="text-xs uppercase tracking-[0.2em] text-slate-400">To</label>
+            <input type="datetime-local" class="mt-2 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm" @bind="toTime" />
         </div>
     </div>
 
@@ -47,7 +67,7 @@
         <div class="mt-4 space-y-3 text-sm">
             @foreach (var logEvent in FilteredEvents)
             {
-                <div class="flex items-center justify-between rounded-2xl border border-slate-100/60 bg-white/70 p-4">
+                <div class="flex cursor-pointer items-center justify-between rounded-2xl border border-slate-100/60 bg-white/70 p-4" @onclick="() => ShowDetails(logEvent)">
                     <span class="@GetLevelClass(logEvent.Level)">@logEvent.Level</span>
                     <span class="flex-1 px-4">@logEvent.Message</span>
                     <span class="text-xs text-slate-500">@logEvent.Timestamp:HH:mm:ss</span>
@@ -55,6 +75,59 @@
             }
         </div>
     </div>
+
+    @if (selectedEvent is not null)
+    {
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+            <div class="sentinel-panel w-full max-w-2xl rounded-3xl p-6">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Log Event Details</h2>
+                    <button class="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700" @onclick="CloseDetails">
+                        Close
+                    </button>
+                </div>
+                <div class="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-200">
+                    <div>
+                        <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Message</span>
+                        <p class="mt-1 text-base text-slate-900 dark:text-slate-100">@selectedEvent.Message</p>
+                    </div>
+                    <div class="grid gap-3 md:grid-cols-2">
+                        <div>
+                            <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Level</span>
+                            <p class="mt-1">@selectedEvent.Level</p>
+                        </div>
+                        <div>
+                            <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Timestamp</span>
+                            <p class="mt-1">@selectedEvent.Timestamp:O</p>
+                        </div>
+                        <div>
+                            <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Source</span>
+                            <p class="mt-1">@selectedEvent.Source.Name</p>
+                        </div>
+                        <div>
+                            <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Type</span>
+                            <p class="mt-1">@selectedEvent.Source.Type</p>
+                        </div>
+                    </div>
+                    @if (selectedEvent.Metadata is not null && selectedEvent.Metadata.Count > 0)
+                    {
+                        <div>
+                            <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Metadata</span>
+                            <div class="mt-2 space-y-1 text-xs">
+                                @foreach (var entry in selectedEvent.Metadata)
+                                {
+                                    <div class="flex items-center justify-between rounded-xl border border-slate-100/60 bg-white/70 px-3 py-2">
+                                        <span class="font-medium text-slate-700">@entry.Key</span>
+                                        <span class="text-slate-500">@entry.Value</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -63,18 +136,19 @@
     private string levelFilter = "All";
     private string sourceFilter = "All";
     private string searchTerm = string.Empty;
+    private bool useRegex;
+    private string? regexError;
+    private DateTime? fromTime;
+    private DateTime? toTime;
     private bool isPaused;
 
     private List<LogEvent> events = new();
+    private LogEvent? selectedEvent;
 
     private IEnumerable<string> Sources =>
         events.Select(evt => evt.Source.Name).Distinct().OrderBy(name => name);
 
-    private IEnumerable<LogEvent> FilteredEvents => events
-        .Where(evt => levelFilter == "All" || evt.Level.ToString() == levelFilter)
-        .Where(evt => sourceFilter == "All" || evt.Source.Name == sourceFilter)
-        .Where(evt => string.IsNullOrWhiteSpace(searchTerm) || evt.Message.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
-        .TakeLast(60);
+    private IEnumerable<LogEvent> FilteredEvents => ApplyFilters();
 
     protected override void OnInitialized()
     {
@@ -101,6 +175,65 @@
     private void TogglePaused()
     {
         isPaused = !isPaused;
+    }
+
+    private IEnumerable<LogEvent> ApplyFilters()
+    {
+        regexError = null;
+        var query = events.AsEnumerable();
+
+        if (levelFilter != "All")
+        {
+            query = query.Where(evt => evt.Level.ToString() == levelFilter);
+        }
+
+        if (sourceFilter != "All")
+        {
+            query = query.Where(evt => evt.Source.Name == sourceFilter);
+        }
+
+        if (fromTime.HasValue)
+        {
+            query = query.Where(evt => evt.Timestamp.LocalDateTime >= fromTime.Value);
+        }
+
+        if (toTime.HasValue)
+        {
+            query = query.Where(evt => evt.Timestamp.LocalDateTime <= toTime.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            if (useRegex)
+            {
+                try
+                {
+                    var regex = new Regex(searchTerm, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+                    query = query.Where(evt => regex.IsMatch(evt.Message));
+                }
+                catch (ArgumentException ex)
+                {
+                    regexError = ex.Message;
+                    return Array.Empty<LogEvent>();
+                }
+            }
+            else
+            {
+                query = query.Where(evt => evt.Message.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        return query.TakeLast(60);
+    }
+
+    private void ShowDetails(LogEvent logEvent)
+    {
+        selectedEvent = logEvent;
+    }
+
+    private void CloseDetails()
+    {
+        selectedEvent = null;
     }
 
     private static string GetLevelClass(LogLevel level) => level switch

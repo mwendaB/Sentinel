@@ -1,23 +1,96 @@
 @page "/metrics"
+@using Sentinel.Web.Services
+@implements IDisposable
 
 <PageTitle>Metrics</PageTitle>
 
 <div class="space-y-6">
     <header>
         <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">Metrics</h1>
-        <p class="text-sm text-slate-500">Throughput, latency, and system performance.</p>
+        <p class="text-sm text-slate-500">Throughput, success rates, and system performance.</p>
     </header>
 
     <div class="grid gap-4 md:grid-cols-2">
         <div class="sentinel-panel rounded-3xl p-6">
-            <h2 class="text-lg font-semibold">Throughput</h2>
-            <p class="text-sm text-slate-500">1,247 events/sec</p>
-            <div class="mt-4 h-32 rounded-2xl bg-gradient-to-r from-emerald-200/60 to-emerald-500/30"></div>
+            <div class="flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Throughput</h2>
+                <span class="text-xs text-slate-500">@LogStreamState.EventsPerSecond events/sec</span>
+            </div>
+            <div class="mt-4 h-32">
+                <svg viewBox="0 0 100 40" class="h-full w-full">
+                    <path d="@throughputPath" fill="none" stroke="#3dd6a3" stroke-width="2" />
+                </svg>
+            </div>
         </div>
         <div class="sentinel-panel rounded-3xl p-6">
-            <h2 class="text-lg font-semibold">Latency</h2>
-            <p class="text-sm text-slate-500">p95: 220ms</p>
-            <div class="mt-4 h-32 rounded-2xl bg-gradient-to-r from-sky-200/60 to-indigo-500/30"></div>
+            <div class="flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Action Success</h2>
+                <span class="text-xs text-slate-500">@LogStreamState.ActionSuccessRate% success</span>
+            </div>
+            <div class="mt-4 h-32">
+                <svg viewBox="0 0 100 40" class="h-full w-full">
+                    <path d="@successPath" fill="none" stroke="#5b7cfa" stroke-width="2" />
+                </svg>
+            </div>
         </div>
     </div>
 </div>
+
+@code {
+    [Inject] private LogStreamState LogStreamState { get; set; } = null!;
+
+    private string throughputPath = string.Empty;
+    private string successPath = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        LogStreamState.Updated += OnStateUpdated;
+        Sync();
+    }
+
+    private void OnStateUpdated()
+    {
+        Sync();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void Sync()
+    {
+        var samples = LogStreamState.GetRecentMetrics(40);
+        throughputPath = BuildPath(samples.Select(sample => sample.EventsPerSecond));
+        successPath = BuildPath(samples.Select(sample => sample.ActionSuccessRate));
+    }
+
+    private static string BuildPath(IEnumerable<int> values)
+    {
+        var list = values.ToList();
+        if (list.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        if (list.Count == 1)
+        {
+            return $"M 0 20 L 100 20";
+        }
+
+        var min = list.Min();
+        var max = list.Max();
+        var range = Math.Max(1, max - min);
+
+        var points = list.Select((value, index) =>
+        {
+            var x = index * (100.0 / (list.Count - 1));
+            var normalized = (value - min) / (double)range;
+            var y = 38 - (normalized * 34);
+            return $"{x:F1} {y:F1}";
+        });
+
+        return "M " + string.Join(" L ", points);
+    }
+
+    public void Dispose()
+    {
+        LogStreamState.Updated -= OnStateUpdated;
+    }
+}

@@ -9,6 +9,7 @@ public sealed class LogStreamState
 {
     private readonly ConcurrentQueue<LogEvent> _events = new();
     private readonly ConcurrentQueue<ActionRecord> _actions = new();
+    private readonly ConcurrentQueue<MetricSample> _metrics = new();
 
     public event Action? Updated;
 
@@ -25,6 +26,9 @@ public sealed class LogStreamState
     public IReadOnlyList<ActionRecord> GetRecentActions(int count) =>
         _actions.Reverse().Take(count).Reverse().ToList();
 
+    public IReadOnlyList<MetricSample> GetRecentMetrics(int count) =>
+        _metrics.Reverse().Take(count).Reverse().ToList();
+
     public void ReplaceMetrics(MetricsSnapshot metrics)
     {
         EventsPerSecond = metrics.EventsPerSecond;
@@ -33,6 +37,7 @@ public sealed class LogStreamState
         ActiveSources = metrics.ActiveSources;
         RulesEvaluated = metrics.RulesEvaluated;
         ActionSuccessRate = metrics.ActionSuccessRate;
+        AddMetricSample(metrics);
         Updated?.Invoke();
     }
 
@@ -74,6 +79,15 @@ public sealed class LogStreamState
     public void UpdateMetrics(int eventsPerSecond)
     {
         EventsPerSecond = eventsPerSecond;
+        AddMetricSample(new MetricsSnapshot
+        {
+            EventsPerSecond = eventsPerSecond,
+            ActiveRules = ActiveRules,
+            ActionsToday = ActionsToday,
+            ActiveSources = ActiveSources,
+            RulesEvaluated = RulesEvaluated,
+            ActionSuccessRate = ActionSuccessRate
+        });
         Updated?.Invoke();
     }
 
@@ -114,6 +128,22 @@ public sealed class LogStreamState
         AddAction(new ActionRecord("Restarted nginx", 95, DateTimeOffset.UtcNow.AddMinutes(-3), ActionStatus.Success));
         AddAction(new ActionRecord("Scaling database", 89, DateTimeOffset.UtcNow.AddMinutes(-7), ActionStatus.InProgress));
         AddAction(new ActionRecord("Notified on-call via Slack", 92, DateTimeOffset.UtcNow.AddMinutes(-12), ActionStatus.Success));
+
+        AddMetricSample(new MetricsSnapshot
+        {
+            EventsPerSecond = EventsPerSecond,
+            ActiveRules = ActiveRules,
+            ActionsToday = ActionsToday,
+            ActiveSources = ActiveSources,
+            RulesEvaluated = RulesEvaluated,
+            ActionSuccessRate = ActionSuccessRate
+        });
+    }
+
+    private void AddMetricSample(MetricsSnapshot metrics)
+    {
+        _metrics.Enqueue(new MetricSample(DateTimeOffset.UtcNow, metrics.EventsPerSecond, metrics.ActionSuccessRate));
+        Trim(_metrics, 120);
     }
 
     private static void Trim<T>(ConcurrentQueue<T> queue, int max)
@@ -130,3 +160,8 @@ public sealed class LogStreamState
         }
     }
 }
+
+public sealed record MetricSample(
+    DateTimeOffset Timestamp,
+    int EventsPerSecond,
+    int ActionSuccessRate);

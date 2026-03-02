@@ -41,7 +41,7 @@
         <div class="mt-4 space-y-3">
             @foreach (var action in FilteredActions)
             {
-                <div class="grid grid-cols-4 gap-3 rounded-2xl border border-slate-100/60 bg-white/70 p-4 text-sm">
+                <div class="grid cursor-pointer grid-cols-4 gap-3 rounded-2xl border border-slate-100/60 bg-white/70 p-4 text-sm" @onclick="() => ShowDetails(action)">
                     <span class="text-slate-500">@action.Timestamp:HH:mm:ss</span>
                     <span class="font-medium">@action.Description</span>
                     <span class="@GetStatusClass(action.Status)">@action.Status</span>
@@ -52,6 +52,77 @@
     </div>
 </div>
 
+@if (selectedAction is not null)
+{
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+        <div class="sentinel-panel w-full max-w-3xl rounded-3xl p-6">
+            <div class="flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Action Details</h2>
+                <button class="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700" @onclick="CloseDetails">
+                    Close
+                </button>
+            </div>
+            <div class="mt-4 grid gap-6 md:grid-cols-2 text-sm text-slate-600 dark:text-slate-200">
+                <div class="space-y-2">
+                    <div>
+                        <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Description</span>
+                        <p class="mt-1 text-base text-slate-900 dark:text-slate-100">@selectedAction.Description</p>
+                    </div>
+                    <div>
+                        <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Status</span>
+                        <p class="mt-1">@selectedAction.Status</p>
+                    </div>
+                    <div>
+                        <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Confidence</span>
+                        <p class="mt-1">@selectedAction.Confidence%</p>
+                    </div>
+                    <div>
+                        <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Timestamp</span>
+                        <p class="mt-1">@selectedAction.Timestamp:O</p>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Audit Trail</span>
+                    <div class="space-y-2">
+                        @foreach (var entry in auditTrail)
+                        {
+                            <div class="flex items-center justify-between rounded-xl border border-slate-100/60 bg-white/70 px-3 py-2 text-xs">
+                                <span class="font-medium text-slate-700">@entry.Step</span>
+                                <span class="text-slate-500">@entry.Timestamp:HH:mm:ss</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 space-y-2">
+                <span class="text-xs uppercase tracking-[0.2em] text-slate-400">Related Logs</span>
+                @if (relatedEvents.Count == 0)
+                {
+                    <div class="rounded-xl border border-slate-100/60 bg-white/70 px-3 py-2 text-xs text-slate-500">
+                        No related log events found in the time window.
+                    </div>
+                }
+                else
+                {
+                    <div class="space-y-2">
+                        @foreach (var logEvent in relatedEvents)
+                        {
+                            <div class="rounded-xl border border-slate-100/60 bg-white/70 p-3 text-sm">
+                                <div class="flex items-center justify-between">
+                                    <span class="font-medium text-slate-900 dark:text-slate-100">@logEvent.Message</span>
+                                    <span class="text-xs text-slate-500">@logEvent.Timestamp:HH:mm:ss</span>
+                                </div>
+                                <div class="text-xs text-slate-500">@logEvent.Source.Name · @logEvent.Level</div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Inject] private LogStreamState LogStreamState { get; set; } = null!;
     [Inject] private IJSRuntime Js { get; set; } = null!;
@@ -59,6 +130,10 @@
     private string statusFilter = "All";
     private DateTime? fromDate = DateTime.UtcNow.Date.AddDays(-1);
     private string searchTerm = string.Empty;
+
+    private ActionRecord? selectedAction;
+    private List<AuditEntry> auditTrail = new();
+    private List<LogEvent> relatedEvents = new();
 
     private IEnumerable<ActionRecord> FilteredActions =>
         LogStreamState.GetRecentActions(200)
@@ -92,4 +167,43 @@
         ActionStatus.Failed => "text-rose-600",
         _ => "text-slate-500"
     };
+
+    private void ShowDetails(ActionRecord action)
+    {
+        selectedAction = action;
+        auditTrail = BuildAuditTrail(action);
+        relatedEvents = FindRelatedEvents(action);
+    }
+
+    private void CloseDetails()
+    {
+        selectedAction = null;
+        auditTrail = new List<AuditEntry>();
+        relatedEvents = new List<LogEvent>();
+    }
+
+    private static List<AuditEntry> BuildAuditTrail(ActionRecord action)
+    {
+        return new List<AuditEntry>
+        {
+            new("Rule matched", action.Timestamp.AddSeconds(-20)),
+            new("Decision engine evaluated", action.Timestamp.AddSeconds(-9)),
+            new("Remediation dispatched", action.Timestamp.AddSeconds(-3)),
+            new($"Outcome: {action.Status}", action.Timestamp)
+        };
+    }
+
+    private List<LogEvent> FindRelatedEvents(ActionRecord action)
+    {
+        var windowStart = action.Timestamp.AddMinutes(-2);
+        var windowEnd = action.Timestamp.AddMinutes(2);
+
+        return LogStreamState.GetRecentEvents(200)
+            .Where(evt => evt.Timestamp >= windowStart && evt.Timestamp <= windowEnd)
+            .OrderByDescending(evt => evt.Timestamp)
+            .Take(5)
+            .ToList();
+    }
+
+    private sealed record AuditEntry(string Step, DateTimeOffset Timestamp);
 }

@@ -1,0 +1,70 @@
+@using Sentinel.Web.Services
+@implements IDisposable
+@inject ApiClientStatus Status
+
+@if (snapshot is not null && !snapshot.Healthy)
+{
+    <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+                <span class="h-2.5 w-2.5 rounded-full @DotClass"></span>
+                <span class="font-semibold">API status</span>
+                <span>@Message</span>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(snapshot.LastError))
+            {
+                <span class="text-xs text-amber-700">Last error: @snapshot.LastError</span>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private ApiStatusSnapshot? snapshot;
+    private Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        snapshot = Status.Snapshot;
+        Status.Updated += OnUpdated;
+        _timer = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private void OnUpdated()
+    {
+        snapshot = Status.Snapshot;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private string DotClass => snapshot is null
+        ? "bg-slate-400"
+        : snapshot.InBackoff
+            ? "bg-amber-500"
+            : "bg-rose-500";
+
+    private string Message
+    {
+        get
+        {
+            if (snapshot is null)
+            {
+                return "Unknown.";
+            }
+
+            if (snapshot.InBackoff && snapshot.NextRetryAt.HasValue)
+            {
+                var remaining = snapshot.NextRetryAt.Value - DateTimeOffset.UtcNow;
+                var seconds = Math.Max(0, remaining.TotalSeconds);
+                return $"Retrying in {seconds:F0}s (attempt {snapshot.RetryAttempt}).";
+            }
+
+            return "Degraded. Requests may fail.";
+        }
+    }
+
+    public void Dispose()
+    {
+        Status.Updated -= OnUpdated;
+        _timer?.Dispose();
+    }
+}
